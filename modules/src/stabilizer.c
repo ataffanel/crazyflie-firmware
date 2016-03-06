@@ -334,7 +334,10 @@ static void stabilizerTask(void* param)
 #elif defined(TUNE_YAW)
         distributePower(actuatorThrust, 0, 0, -actuatorYaw);
 #else
-        distributePower(actuatorThrust, actuatorRoll, actuatorPitch, -actuatorYaw);
+        eulerPitchDesired = -eulerPitchDesired;
+        if (eulerPitchDesired<0) eulerPitchDesired = 0;
+        if (eulerPitchDesired>30) eulerPitchDesired = 30;
+        distributePower(actuatorThrust, actuatorRoll, 1000*eulerPitchDesired, -actuatorYaw);
 #endif
       }
       else
@@ -572,25 +575,44 @@ static void stabilizerYawModeUpdate(void)
 static void distributePower(const uint16_t thrust, const int16_t roll,
                             const int16_t pitch, const int16_t yaw)
 {
-#ifdef QUAD_FORMATION_X
-  int16_t r = roll >> 1;
-  int16_t p = pitch >> 1;
-  motorPowerM1 = limitThrust(thrust - r + p + yaw);
-  motorPowerM2 = limitThrust(thrust - r - p - yaw);
-  motorPowerM3 =  limitThrust(thrust + r - p + yaw);
-  motorPowerM4 =  limitThrust(thrust + r + p - yaw);
-#else // QUAD_FORMATION_NORMAL
-  motorPowerM1 = limitThrust(thrust + pitch + yaw);
-  motorPowerM2 = limitThrust(thrust - roll - yaw);
-  motorPowerM3 =  limitThrust(thrust - pitch + yaw);
-  motorPowerM4 =  limitThrust(thrust + roll - yaw);
-#endif
+  // Facing UP
+  motorPowerM1 = limitThrust(thrust + yaw);
+  motorPowerM4 = limitThrust(thrust - yaw);
+
+  // Facing FRONT
+  motorPowerM2 = limitThrust( pitch - (yaw/1));
+  motorPowerM3 = limitThrust( pitch + (yaw/1));
+
+
 
   motorsSetRatio(MOTOR_M1, motorPowerM1);
   motorsSetRatio(MOTOR_M2, motorPowerM2);
   motorsSetRatio(MOTOR_M3, motorPowerM3);
   motorsSetRatio(MOTOR_M4, motorPowerM4);
 }
+//
+// static void distributePower(const uint16_t thrust, const int16_t roll,
+//                             const int16_t pitch, const int16_t yaw)
+// {
+// #ifdef QUAD_FORMATION_X
+//   int16_t r = roll >> 1;
+//   int16_t p = pitch >> 1;
+//   motorPowerM1 = limitThrust(thrust - r + p + yaw);
+//   motorPowerM2 = limitThrust(thrust - r - p - yaw);
+//   motorPowerM3 =  limitThrust(thrust + r - p + yaw);
+//   motorPowerM4 =  limitThrust(thrust + r + p - yaw);
+// #else // QUAD_FORMATION_NORMAL
+//   motorPowerM1 = limitThrust(thrust + pitch + yaw);
+//   motorPowerM2 = limitThrust(thrust - roll - yaw);
+//   motorPowerM3 =  limitThrust(thrust - pitch + yaw);
+//   motorPowerM4 =  limitThrust(thrust + roll - yaw);
+// #endif
+//
+//   motorsSetRatio(MOTOR_M1, motorPowerM1);
+//   motorsSetRatio(MOTOR_M2, motorPowerM2);
+//   motorsSetRatio(MOTOR_M3, motorPowerM3);
+//   motorsSetRatio(MOTOR_M4, motorPowerM4);
+// }
 
 static uint16_t limitThrust(int32_t value)
 {
