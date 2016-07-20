@@ -31,6 +31,7 @@
 #else
   #include "lps25h.h"
 #endif
+#include "motors.h"
 
 #include "param.h"
 
@@ -73,6 +74,10 @@ void sensorsAcquire(sensorData_t *sensors, const uint32_t tick)
     if (position.timestamp) {
       sensors->position = position;
     }
+  }
+
+  for (int i=0; i<4; i++) {
+    sensors->thrusts[i] = (motorsGetRatio(i)/64436.0)*61.9*9.8;
   }
 }
 

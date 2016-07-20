@@ -156,3 +156,8 @@ LOG_GROUP_STOP(mag)
 LOG_GROUP_START(controller)
 LOG_ADD(LOG_INT16, ctr_yaw, &control.yaw)
 LOG_GROUP_STOP(controller)
+
+#include "log.h"
+LOG_GROUP_START(estimator)
+LOG_ADD(LOG_FLOAT, x_velocity, &state.velocity.x)
+LOG_GROUP_STOP(estimator)

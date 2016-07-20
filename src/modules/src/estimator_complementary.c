@@ -1,4 +1,6 @@
 
+#include <math.h>
+
 #include "stabilizer.h"
 #include "stabilizer_types.h"
 
@@ -25,6 +27,9 @@ bool stateEstimatorTest(void)
   return pass;
 }
 
+#define SIGN(X) ((X>=0)?1:-1)
+#define M_PI 3.14159265358979323846
+
 void stateEstimator(state_t *state, const sensorData_t *sensorData, const uint32_t tick)
 {
   if (RATE_DO_EXECUTE(ATTITUDE_UPDATE_RATE, tick)) {
@@ -38,6 +43,21 @@ void stateEstimator(state_t *state, const sensorData_t *sensorData, const uint32
                                                     sensorData->acc.z);
 
     positionUpdateVelocity(state->acc.z, ATTITUDE_UPDATE_DT);
+
+    // Simple naive estimation of the speed based on the current attitude
+    float meanThrust = 0;
+    for (int i=0; i<4; i++) {
+      meanThrust += sensorData->thrusts[i];
+    }
+    meanThrust /= 4;
+
+    if (meanThrust == 0) {
+      state->acc.x = 0;
+      state->velocity.x = 0;
+    } else {
+      state->acc.x = - sinf(state->attitude.pitch*M_PI/180.0) * meanThrust - 0.01*SIGN(state->velocity.x)*state->velocity.x*state->velocity.x;
+      state->velocity.x += state->acc.x *  ATTITUDE_UPDATE_DT;
+    }
   }
 
   if (RATE_DO_EXECUTE(POS_UPDATE_RATE, tick)) {
