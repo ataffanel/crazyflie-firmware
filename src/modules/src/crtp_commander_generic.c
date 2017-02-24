@@ -32,6 +32,8 @@
 #include "crtp.h"
 #include "FreeRTOS.h"
 
+#include "num.h"
+
 /* The generic commander format contains a packet type and data that has to be
  * decoded into a setpoint_t structure. The aim is to make it future-proof
  * by easily allowing the addition of new packets for future use cases.
@@ -60,6 +62,8 @@ typedef void (*packetDecoder_t)(setpoint_t *setpoint, uint8_t type, const void *
 enum packet_type {
   stopType          = 0,
   velocityWorldType = 1,
+  rateType = 2,
+  fullControlType = 3,
 };
 
 /* ---===== 2 - Decoding functions =====--- */
@@ -104,10 +108,51 @@ static void velocityDecoder(setpoint_t *setpoint, uint8_t type, const void *data
 }
 
 
+/* fullControlDecoder
+ * Used to send control setpoint in position, velocity and acceleration
+ */
+typedef struct {
+  uint16_t packetHasExternalReference:1;
+  uint16_t setEmergency:1;
+  uint16_t resetEmergency:1;
+  uint16_t controlModeX:3;
+  uint16_t controlModeY:3;
+  uint16_t controlModeZ:3;
+  uint16_t :4;
+} __attribute__((packed)) fullControlPacketHeader_t; // size 2
+
+typedef struct
+{
+  fullControlPacketHeader_t header; // size 2
+  uint16_t x[3];
+  uint16_t y[3];
+  uint16_t z[3];
+  uint16_t yaw[2];
+} __attribute__((packed)) fullControlPacket_t;
+static void fullControlDecoder(setpoint_t *setpoint, uint8_t type, const void *data, size_t datalen)
+{
+  ASSERT(datalen == sizeof(fullControlPacket_t));
+
+  fullControlPacketHeader_t *header = (fullControlPacketHeader_t*)data;
+  fullControlPacket_t *packet = (fullControlPacket_t *) data;
+
+  setpoint->xmode = header->controlModeX;
+  setpoint->ymode = header->controlModeY;
+  setpoint->zmode = header->controlModeZ;
+  setpoint->setEmergency = packet->header.setEmergency;
+  setpoint->resetEmergency = packet->header.resetEmergency;
+
+  for (int i = 0; i<3; i++) { setpoint->x[i] = half2single(packet->x[i]); }
+  for (int i = 0; i<3; i++) { setpoint->y[i] = half2single(packet->y[i]); }
+  for (int i = 0; i<3; i++) { setpoint->z[i] = half2single(packet->z[i]); }
+  for (int i = 0; i<2; i++) { setpoint->yaw[i] = half2single(packet->yaw[i]); }
+}
+
  /* ---===== 3 - packetDecoders array =====--- */
 const static packetDecoder_t packetDecoders[] = {
   [stopType]          = stopDecoder,
   [velocityWorldType] = velocityDecoder,
+  [fullControlType]   = fullControlDecoder,
 };
 
 /* Decoder switch */

@@ -142,6 +142,10 @@ typedef enum mode_e {
   modeVelocity
 } mode_t;
 
+#define CONTROLMODE_ACCELERATION(mode) ((0b001 & mode) != 0)
+#define CONTROLMODE_VELOCITY(mode)     ((0b010 & mode) != 0)
+#define CONTROLMODE_POSITION(mode)     ((0b100 & mode) != 0)
+
 typedef struct setpoint_s {
   uint32_t timestamp;
 
@@ -159,6 +163,15 @@ typedef struct setpoint_s {
     mode_t pitch;
     mode_t yaw;
   } mode;
+
+  // Data from and for the new controller
+  bool setEmergency;
+  bool resetEmergency;
+  uint8_t xmode, ymode, zmode;
+  float x[3];
+  float y[3];
+  float z[3];
+  float yaw[2];
 } setpoint_t;
 
 /** Estimate of position */
