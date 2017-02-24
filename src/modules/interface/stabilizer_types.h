@@ -130,9 +130,11 @@ typedef struct state_s {
 } state_t;
 
 typedef struct control_s {
-  int16_t roll;
-  int16_t pitch;
-  int16_t yaw;
+  bool enable;
+  int16_t roll, pitch, yaw;
+  float omega[3]; // used for the cf2 power distribution
+  float torque[3]; // used for the cf2 power distribution
+  float motorScale[4]; // populated by the cf2 motor calibration routine
   float thrust;
 } control_t;
 
@@ -210,6 +212,7 @@ typedef struct tofMeasurement_s {
 
 #define ATTITUDE_RATE RATE_500_HZ
 #define POSITION_RATE RATE_100_HZ
+#define CONTROL_RATE RATE_100_HZ
 
 #define RATE_DO_EXECUTE(RATE_HZ, TICK) ((TICK % (RATE_MAIN_LOOP / RATE_HZ)) == 0)
 
