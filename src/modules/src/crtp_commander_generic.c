@@ -82,6 +82,8 @@ enum packet_type {
  */
 static void stopDecoder(setpoint_t *setpoint, uint8_t type, const void *data, size_t datalen)
 {
+  setpoint->resetEmergency = false;
+  setpoint->setEmergency = true;
   return;
 }
 
@@ -109,6 +111,9 @@ static void velocityDecoder(setpoint_t *setpoint, uint8_t type, const void *data
   setpoint->velocity.z = values->vz;
 
   setpoint->mode.yaw = modeVelocity;
+
+  setpoint->resetEmergency = true;
+  setpoint->setEmergency = false;
 
   setpoint->xmode = 0b010;
   setpoint->ymode = 0b010;
