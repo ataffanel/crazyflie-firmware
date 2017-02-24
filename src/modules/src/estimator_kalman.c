@@ -71,8 +71,8 @@
 #include "log.h"
 #include "param.h"
 
-#include "math.h"
-#include "arm_math.h"
+#include "cfmath.h"
+#include "physical_constants.h"
 
 //#define KALMAN_USE_BARO_UPDATE
 //#define KALMAN_NAN_CHECK
@@ -155,21 +155,16 @@ static inline bool stateEstimatorHasTOFPacket(tofMeasurement_t *tof) {
  * Constants used in the estimator
  */
 
-#define DEG_TO_RAD (PI/180.0f)
-#define RAD_TO_DEG (180.0f/PI)
-
-#define GRAVITY_MAGNITUDE (9.81f) // we use the magnitude such that the sign/direction is explicit in calculations
-#define CRAZYFLIE_WEIGHT_grams (27.0f)
-
 //thrust is thrust mapped for 65536 <==> 60 GRAMS!
-#define CONTROL_TO_ACC (GRAVITY_MAGNITUDE*60.0f/CRAZYFLIE_WEIGHT_grams/65536.0f)
-
-#define SPEED_OF_LIGHT (299792458)
+#ifdef CONTROLLER_TYPE_new
+#define CONTROL_TO_ACC (1.0f)
+#else
+#define CONTROL_TO_ACC (GRAVITY*60.0f/(CRAZYFLIE_MASS*1e3f)/65536.0f)
+#endif
 
 // TODO: Decouple the TDOA implementation from the Kalman filter...
 #define METERS_PER_TDOATICK (4.691763979e-3f)
 #define SECONDS_PER_TDOATICK (15.650040064e-12f)
-
 
 /**
  * Tuning parameters
@@ -178,11 +173,11 @@ static inline bool stateEstimatorHasTOFPacket(tofMeasurement_t *tof) {
 #define BARO_RATE RATE_25_HZ
 
 // the point at which the dynamics change from stationary to flying
-#define IN_FLIGHT_THRUST_THRESHOLD (GRAVITY_MAGNITUDE*0.1f)
+#define IN_FLIGHT_THRUST_THRESHOLD (GRAVITY*0.1f)
 #define IN_FLIGHT_TIME_THRESHOLD (500)
 
 // the reversion of pitch and roll to zero
-#define ROLLPITCH_ZERO_REVERSION (1e-3f)
+#define ROLLPITCH_ZERO_REVERSION (0)//1e-4f)
 
 // The bounds on the covariance, these shouldn't be hit, but sometimes are... why?
 #define MAX_COVARIANCE (100)
@@ -200,17 +195,15 @@ static const float stdDevInitialAttitude_rollpitch = 0.01;
 static const float stdDevInitialAttitude_yaw = 0.1;
 
 static float procNoiseAcc_xy = 0.5f;
-static float procNoiseAcc_z = 1.0f;
+static float procNoiseAcc_z = 1.5f;
 static float procNoiseVel = 0;
 static float procNoisePos = 0;
 static float procNoiseAtt = 0;
 static float measNoiseBaro = 2.0f; // meters
 static float measNoiseGyro_rollpitch = 0.1f; // radians per second
-static float measNoiseGyro_yaw = 0.1f; // radians per second
-
-// We track a TDOA skew as part of the Kalman filter
-static const float stdDevInitialSkew = 0.1;
-static float procNoiseSkew = 10e-6f; // seconds per second^2 (is multiplied by dt to give skew noise)
+static float measNoiseGyro_yaw = 0.25f; // radians per second
+static float dragXY = 0.19f;
+static float dragZ = 0.05f;
 
 /**
  * Quadrocopter State
@@ -219,7 +212,6 @@ static float procNoiseSkew = 10e-6f; // seconds per second^2 (is multiplied by d
  * - X, Y, Z: the quad's position in the global frame
  * - PX, PY, PZ: the quad's velocity in its body frame
  * - D0, D1, D2: attitude error
- * - SKEW: the skew from anchor system clock to quad clock
  *
  * For more information, refer to the paper
  */
@@ -231,8 +223,10 @@ typedef enum
 } stateIdx_t;
 
 static float S[STATE_DIM];
+static uint16_t Sx16, Sy16, Sz16; // storage for float16 states, mainly for logging to fit more data in a packet
+static float Svx, Svy, Svz;
 
-// The quad's attitude as a quaternion (w,x,y,z)
+// The quad's attitude as a right quaternion (w,x,y,z)  (such that v_I = q* v_B q)
 // We store as a quaternion to allow easy normalization (in comparison to a rotation matrix),
 // while also being robust against singularities (in comparison to euler angles)
 static float q[4] = {1,0,0,0};
@@ -264,8 +258,6 @@ static uint32_t gyroAccumulatorCount;
 static uint32_t baroAccumulatorCount;
 static bool quadIsFlying = false;
 static int32_t lastTDOAUpdate;
-static float stateSkew;
-static float varSkew;
 static uint32_t lastFlightCmd;
 static uint32_t takeoffTime;
 static uint32_t tdoaCount;
@@ -273,15 +265,6 @@ static uint32_t tdoaCount;
 /**
  * Supporting and utility functions
  */
-
-static inline void mat_trans(const arm_matrix_instance_f32 * pSrc, arm_matrix_instance_f32 * pDst)
-{ configASSERT(ARM_MATH_SUCCESS == arm_mat_trans_f32(pSrc, pDst)); }
-static inline void mat_inv(const arm_matrix_instance_f32 * pSrc, arm_matrix_instance_f32 * pDst)
-{ configASSERT(ARM_MATH_SUCCESS == arm_mat_inverse_f32(pSrc, pDst)); }
-static inline void mat_mult(const arm_matrix_instance_f32 * pSrcA, const arm_matrix_instance_f32 * pSrcB, arm_matrix_instance_f32 * pDst)
-{ configASSERT(ARM_MATH_SUCCESS == arm_mat_mult_f32(pSrcA, pSrcB, pDst)); }
-static inline float arm_sqrt(float32_t in)
-{ float pOut = 0; arm_status result = arm_sqrt_f32(in, &pOut); configASSERT(ARM_MATH_SUCCESS == result); return pOut; }
 
 #ifdef KALMAN_NAN_CHECK
 static void stateEstimatorAssertNotNaN() {
@@ -358,16 +341,16 @@ void stateEstimatorUpdate(state_t *state, sensorData_t *sensors, control_t *cont
   // slower than the IMU loop, but the IMU information is required externally at
   // a higher rate (for body rate control).
   if (sensorsReadAcc(&sensors->acc)) {
-    accAccumulator.x += GRAVITY_MAGNITUDE*sensors->acc.x; // accelerometer is in Gs
-    accAccumulator.y += GRAVITY_MAGNITUDE*sensors->acc.y; // but the estimator requires ms^-2
-    accAccumulator.z += GRAVITY_MAGNITUDE*sensors->acc.z;
+    accAccumulator.x += GRAVITY*sensors->acc.x; // accelerometer is in Gs
+    accAccumulator.y += GRAVITY*sensors->acc.y; // but the estimator requires ms^-2
+    accAccumulator.z += GRAVITY*sensors->acc.z;
     accAccumulatorCount++;
   }
 
   if (sensorsReadGyro(&sensors->gyro)) {
-    gyroAccumulator.x += sensors->gyro.x * DEG_TO_RAD; // gyro is in deg/sec
-    gyroAccumulator.y += sensors->gyro.y * DEG_TO_RAD; // but the estimator requires rad/sec
-    gyroAccumulator.z += sensors->gyro.z * DEG_TO_RAD;
+    gyroAccumulator.x += radians(sensors->gyro.x); // gyro is in deg/sec
+    gyroAccumulator.y += radians(sensors->gyro.y); // but the estimator requires rad/sec
+    gyroAccumulator.z += radians(sensors->gyro.z);
     gyroAccumulatorCount++;
   }
 
@@ -376,7 +359,7 @@ void stateEstimatorUpdate(state_t *state, sensorData_t *sensors, control_t *cont
   }
 
   // Average the thrust command from the last timestep, generated externally by the controller
-  thrustAccumulator += control->thrust * CONTROL_TO_ACC; // thrust is in grams, we need ms^-2
+  thrustAccumulator += control->thrust * CONTROL_TO_ACC;
   thrustAccumulatorCount++;
 
   // Run the system dynamics to predict the state forward.
@@ -519,7 +502,7 @@ static void stateEstimatorPredict(float cmdThrust, Axis3f *acc, Axis3f *gyro, fl
    *       R is the current attitude as a rotation matrix
    *       f/m is the mass-normalized motor force (acceleration in the body's z direction)
    *       g is gravity
-   *       x, p, d, skew are the quad's states
+   *       x, p, d are the quad's states
    * note that d (attitude error) is zero at the beginning of each iteration,
    * since error information is incorporated into R after each Kalman update.
    */
@@ -578,29 +561,29 @@ static void stateEstimatorPredict(float cmdThrust, Axis3f *acc, Axis3f *gyro, fl
   A[STATE_Z][STATE_D2] = (S[STATE_PX]*R[2][1] - S[STATE_PY]*R[2][0])*dt;
 
   // body-frame velocity from body-frame velocity
-  A[STATE_PX][STATE_PX] = 1; //drag negligible
+  A[STATE_PX][STATE_PX] = 1 - 2*dragXY*S[STATE_PX]*dt;
   A[STATE_PY][STATE_PX] =-gyro->z*dt;
   A[STATE_PZ][STATE_PX] = gyro->y*dt;
 
   A[STATE_PX][STATE_PY] = gyro->z*dt;
-  A[STATE_PY][STATE_PY] = 1; //drag negligible
+  A[STATE_PY][STATE_PY] = 1 - 2*dragXY*S[STATE_PY]*dt;
   A[STATE_PZ][STATE_PY] =-gyro->x*dt;
 
   A[STATE_PX][STATE_PZ] =-gyro->y*dt;
   A[STATE_PY][STATE_PZ] = gyro->x*dt;
-  A[STATE_PZ][STATE_PZ] = 1; //drag negligible
+  A[STATE_PZ][STATE_PZ] = 1 - 2*dragZ*S[STATE_PZ]*dt;
 
   // body-frame velocity from attitude error
   A[STATE_PX][STATE_D0] =  0;
-  A[STATE_PY][STATE_D0] = -GRAVITY_MAGNITUDE*R[2][2]*dt;
-  A[STATE_PZ][STATE_D0] =  GRAVITY_MAGNITUDE*R[2][1]*dt;
+  A[STATE_PY][STATE_D0] = -GRAVITY*R[2][2]*dt;
+  A[STATE_PZ][STATE_D0] =  GRAVITY*R[2][1]*dt;
 
-  A[STATE_PX][STATE_D1] =  GRAVITY_MAGNITUDE*R[2][2]*dt;
+  A[STATE_PX][STATE_D1] =  GRAVITY*R[2][2]*dt;
   A[STATE_PY][STATE_D1] =  0;
-  A[STATE_PZ][STATE_D1] = -GRAVITY_MAGNITUDE*R[2][0]*dt;
+  A[STATE_PZ][STATE_D1] = -GRAVITY*R[2][0]*dt;
 
-  A[STATE_PX][STATE_D2] = -GRAVITY_MAGNITUDE*R[2][1]*dt;
-  A[STATE_PY][STATE_D2] =  GRAVITY_MAGNITUDE*R[2][0]*dt;
+  A[STATE_PX][STATE_D2] = -GRAVITY*R[2][1]*dt;
+  A[STATE_PY][STATE_D2] =  GRAVITY*R[2][0]*dt;
   A[STATE_PZ][STATE_D2] =  0;
 
   // attitude error from attitude error
@@ -665,7 +648,7 @@ static void stateEstimatorPredict(float cmdThrust, Axis3f *acc, Axis3f *gyro, fl
     // TODO: In the next lines, can either use cmdThrust/mass, or acc->z. Need to test which is more reliable.
     // cmdThrust's error comes from poorly calibrated mass, and inexact cmdThrust -> thrust map
     // acc->z's error comes from measurement noise and accelerometer scaling
-    // float zacc = cmdThrust;
+    // zacc = cmdThrust;
     zacc = acc->z;
 
     // position updates in the body frame (will be rotated to inertial frame)
@@ -676,7 +659,7 @@ static void stateEstimatorPredict(float cmdThrust, Axis3f *acc, Axis3f *gyro, fl
     // position update
     S[STATE_X] += R[0][0] * dx + R[0][1] * dy + R[0][2] * dz;
     S[STATE_Y] += R[1][0] * dx + R[1][1] * dy + R[1][2] * dz;
-    S[STATE_Z] += R[2][0] * dx + R[2][1] * dy + R[2][2] * dz - GRAVITY_MAGNITUDE * dt2 / 2.0f;
+    S[STATE_Z] += R[2][0] * dx + R[2][1] * dy + R[2][2] * dz - GRAVITY * dt2 / 2.0f;
 
     // keep previous time step's state for the update
     tmpSPX = S[STATE_PX];
@@ -684,9 +667,9 @@ static void stateEstimatorPredict(float cmdThrust, Axis3f *acc, Axis3f *gyro, fl
     tmpSPZ = S[STATE_PZ];
 
     // body-velocity update: accelerometers - gyros cross velocity - gravity in body frame
-    S[STATE_PX] += dt * (gyro->z * tmpSPY - gyro->y * tmpSPZ - GRAVITY_MAGNITUDE * R[2][0]);
-    S[STATE_PY] += dt * (-gyro->z * tmpSPX + gyro->x * tmpSPZ - GRAVITY_MAGNITUDE * R[2][1]);
-    S[STATE_PZ] += dt * (zacc + gyro->y * tmpSPX - gyro->x * tmpSPY - GRAVITY_MAGNITUDE * R[2][2]);
+    S[STATE_PX] += dt * (gyro->z * tmpSPY - gyro->y * tmpSPZ - GRAVITY * R[2][0]) + dragXY*tmpSPX*tmpSPX*dt*(tmpSPX<0?1:-1);
+    S[STATE_PY] += dt * (-gyro->z * tmpSPX + gyro->x * tmpSPZ - GRAVITY * R[2][1]) + dragXY*tmpSPY*tmpSPY*dt*(tmpSPY<0?1:-1);
+    S[STATE_PZ] += dt * (zacc + gyro->y * tmpSPX - gyro->x * tmpSPY - GRAVITY * R[2][2]) + dragZ*tmpSPZ*tmpSPZ*dt*(tmpSPZ<0?1:-1);
   }
   else // Acceleration can be in any direction, as measured by the accelerometer. This occurs, eg. in freefall or while being carried.
   {
@@ -698,7 +681,7 @@ static void stateEstimatorPredict(float cmdThrust, Axis3f *acc, Axis3f *gyro, fl
     // position update
     S[STATE_X] += R[0][0] * dx + R[0][1] * dy + R[0][2] * dz;
     S[STATE_Y] += R[1][0] * dx + R[1][1] * dy + R[1][2] * dz;
-    S[STATE_Z] += R[2][0] * dx + R[2][1] * dy + R[2][2] * dz - GRAVITY_MAGNITUDE * dt2 / 2.0f;
+    S[STATE_Z] += R[2][0] * dx + R[2][1] * dy + R[2][2] * dz - GRAVITY * dt2 / 2.0f;
 
     // keep previous time step's state for the update
     tmpSPX = S[STATE_PX];
@@ -706,9 +689,9 @@ static void stateEstimatorPredict(float cmdThrust, Axis3f *acc, Axis3f *gyro, fl
     tmpSPZ = S[STATE_PZ];
 
     // body-velocity update: accelerometers - gyros cross velocity - gravity in body frame
-    S[STATE_PX] += dt * (acc->x + gyro->z * tmpSPY - gyro->y * tmpSPZ - GRAVITY_MAGNITUDE * R[2][0]);
-    S[STATE_PY] += dt * (acc->y - gyro->z * tmpSPX + gyro->x * tmpSPZ - GRAVITY_MAGNITUDE * R[2][1]);
-    S[STATE_PZ] += dt * (acc->z + gyro->y * tmpSPX - gyro->x * tmpSPY - GRAVITY_MAGNITUDE * R[2][2]);
+    S[STATE_PX] += dt * (acc->x + gyro->z * tmpSPY - gyro->y * tmpSPZ - GRAVITY * R[2][0]);
+    S[STATE_PY] += dt * (acc->y - gyro->z * tmpSPX + gyro->x * tmpSPZ - GRAVITY * R[2][1]);
+    S[STATE_PZ] += dt * (acc->z + gyro->y * tmpSPX - gyro->x * tmpSPY - GRAVITY * R[2][2]);
   }
 
   if(S[STATE_Z] < 0) {
@@ -856,13 +839,13 @@ static void stateEstimatorUpdateWithAccOnGround(Axis3f *acc)
 
   // Only do the update if the quad isn't flying, and if the accelerometers
   // are close enough to gravity that we can assume it is the only force
-  if(!quadIsFlying && fabs(1-accMag/GRAVITY_MAGNITUDE) < 0.01) {
+  if(!quadIsFlying && fabs(1-accMag/GRAVITY) < 0.01) {
     float h[STATE_DIM] = {0};
     arm_matrix_instance_f32 H = {1, STATE_DIM, h};
 
-    float gravityInBodyX = GRAVITY_MAGNITUDE * R[2][0];
-    float gravityInBodyY = GRAVITY_MAGNITUDE * R[2][1];
-    float gravityInBodyZ = GRAVITY_MAGNITUDE * R[2][2];
+    float gravityInBodyX = GRAVITY * R[2][0];
+    float gravityInBodyY = GRAVITY * R[2][1];
+    float gravityInBodyZ = GRAVITY * R[2][2];
 
     // TODO: What are the update equations?
   }
@@ -1142,9 +1125,9 @@ static void stateEstimatorExternalizeState(state_t *state, sensorData_t *sensors
   // Save attitude, adjusted for the legacy CF2 body coordinate system
   state->attitude = (attitude_t){
       .timestamp = tick,
-      .roll = roll*RAD_TO_DEG,
-      .pitch = -pitch*RAD_TO_DEG,
-      .yaw = yaw*RAD_TO_DEG
+      .roll = degrees(roll),
+      .pitch = -degrees(pitch),
+      .yaw = degrees(yaw)
   };
 
   // Save quaternion, hopefully one day this could be used in a better controller.
@@ -1156,6 +1139,15 @@ static void stateEstimatorExternalizeState(state_t *state, sensorData_t *sensors
       .y = q[2],
       .z = q[3]
   };
+
+
+  Sx16 = single2half(S[STATE_X]);
+  Sy16 = single2half(S[STATE_Y]);
+  Sz16 = single2half(S[STATE_Z]);
+
+  Svx = state->velocity.x;
+  Svy = state->velocity.y;
+  Svz = state->velocity.z;
 }
 
 
@@ -1190,7 +1182,7 @@ void stateEstimatorInit(void) {
   thrustAccumulatorCount = 0;
   baroAccumulatorCount = 0;
 
-  // Reset all matrices to 0 (like uppon system reset)
+  // Reset all matrices to 0 (like upon system reset)
   memset(q, 0, sizeof(q));
   memset(R, 0, sizeof(R));
   memset(P, 0, sizeof(S));
@@ -1232,8 +1224,6 @@ void stateEstimatorInit(void) {
   P[STATE_D0][STATE_D0] = powf(stdDevInitialAttitude_rollpitch, 2);
   P[STATE_D1][STATE_D1] = powf(stdDevInitialAttitude_rollpitch, 2);
   P[STATE_D2][STATE_D2] = powf(stdDevInitialAttitude_yaw, 2);
-
-  varSkew = powf(stdDevInitialSkew, 2);
 
   tdoaCount = 0;
   isInit = true;
@@ -1284,44 +1274,36 @@ bool stateEstimatorTest(void)
   return isInit;
 }
 
-LOG_GROUP_START(kalman)
+LOG_GROUP_START(measured)
   LOG_ADD(LOG_UINT8, inFlight, &quadIsFlying)
-  LOG_ADD(LOG_FLOAT, stateX, &S[STATE_X])
-  LOG_ADD(LOG_FLOAT, stateY, &S[STATE_Y])
-  LOG_ADD(LOG_FLOAT, stateZ, &S[STATE_Z])
-  LOG_ADD(LOG_FLOAT, statePX, &S[STATE_PX])
-  LOG_ADD(LOG_FLOAT, statePY, &S[STATE_PY])
-  LOG_ADD(LOG_FLOAT, statePZ, &S[STATE_PZ])
-  LOG_ADD(LOG_FLOAT, stateD0, &S[STATE_D0])
-  LOG_ADD(LOG_FLOAT, stateD1, &S[STATE_D1])
-  LOG_ADD(LOG_FLOAT, stateD2, &S[STATE_D2])
-  LOG_ADD(LOG_FLOAT, stateSkew, &stateSkew)
-  LOG_ADD(LOG_FLOAT, varX, &P[STATE_X][STATE_X])
-  LOG_ADD(LOG_FLOAT, varY, &P[STATE_Y][STATE_Y])
-  LOG_ADD(LOG_FLOAT, varZ, &P[STATE_Z][STATE_Z])
-  LOG_ADD(LOG_FLOAT, varPX, &P[STATE_PX][STATE_PX])
-  LOG_ADD(LOG_FLOAT, varPY, &P[STATE_PY][STATE_PY])
-  LOG_ADD(LOG_FLOAT, varPZ, &P[STATE_PZ][STATE_PZ])
-  LOG_ADD(LOG_FLOAT, varD0, &P[STATE_D0][STATE_D0])
-  LOG_ADD(LOG_FLOAT, varD1, &P[STATE_D1][STATE_D1])
-  LOG_ADD(LOG_FLOAT, varD2, &P[STATE_D2][STATE_D2])
-  LOG_ADD(LOG_FLOAT, varSkew, &varSkew)
-  LOG_ADD(LOG_FLOAT, q0, &q[0])
-  LOG_ADD(LOG_FLOAT, q1, &q[1])
-  LOG_ADD(LOG_FLOAT, q2, &q[2])
-  LOG_ADD(LOG_FLOAT, q3, &q[3])
-LOG_GROUP_STOP(kalman)
+  LOG_ADD(LOG_FLOAT, x, &S[STATE_X])
+  LOG_ADD(LOG_FLOAT, y, &S[STATE_Y])
+  LOG_ADD(LOG_FLOAT, z, &S[STATE_Z])
+  LOG_ADD(LOG_UINT16, x16, &Sx16)
+  LOG_ADD(LOG_UINT16, y16, &Sy16)
+  LOG_ADD(LOG_UINT16, z16, &Sz16)
+  LOG_ADD(LOG_FLOAT, px, &S[STATE_PX])
+  LOG_ADD(LOG_FLOAT, py, &S[STATE_PY])
+  LOG_ADD(LOG_FLOAT, pz, &S[STATE_PZ])
+  LOG_ADD(LOG_FLOAT, vx, &Svx)
+  LOG_ADD(LOG_FLOAT, vy, &Svy)
+  LOG_ADD(LOG_FLOAT, vz, &Svz)
+  LOG_ADD(LOG_FLOAT, qw, &q[0])
+  LOG_ADD(LOG_FLOAT, qx, &q[1])
+  LOG_ADD(LOG_FLOAT, qy, &q[2])
+  LOG_ADD(LOG_FLOAT, qz, &q[3])
+LOG_GROUP_STOP(measured)
 
 PARAM_GROUP_START(kalman)
   PARAM_ADD(PARAM_UINT8, resetEstimation, &resetEstimation)
-  PARAM_ADD(PARAM_UINT8, quadIsFlying, &quadIsFlying)
   PARAM_ADD(PARAM_FLOAT, pNAcc_xy, &procNoiseAcc_xy)
   PARAM_ADD(PARAM_FLOAT, pNAcc_z, &procNoiseAcc_z)
   PARAM_ADD(PARAM_FLOAT, pNVel, &procNoiseVel)
   PARAM_ADD(PARAM_FLOAT, pNPos, &procNoisePos)
   PARAM_ADD(PARAM_FLOAT, pNAtt, &procNoiseAtt)
-  PARAM_ADD(PARAM_FLOAT, pNSkew, &procNoiseSkew)
   PARAM_ADD(PARAM_FLOAT, mNBaro, &measNoiseBaro)
   PARAM_ADD(PARAM_FLOAT, mNGyro_rollpitch, &measNoiseGyro_rollpitch)
   PARAM_ADD(PARAM_FLOAT, mNGyro_yaw, &measNoiseGyro_yaw)
+  PARAM_ADD(PARAM_FLOAT, drag_xy, &dragXY)
+  PARAM_ADD(PARAM_FLOAT, drag_z, &dragZ)
 PARAM_GROUP_STOP(kalman)

@@ -28,6 +28,7 @@
 
 #include "crtp_commander.h"
 
+#include "log.h"
 #include "commander.h"
 #include "crtp.h"
 #include "FreeRTOS.h"
@@ -55,6 +56,8 @@
  *   3 - Add the decoder function to the packetDecoders array.
  *   4 - Pull-request your change :-)
  */
+
+static uint32_t debugCount;
 
 typedef void (*packetDecoder_t)(setpoint_t *setpoint, uint8_t type, const void *data, size_t datalen);
 
@@ -104,6 +107,16 @@ static void velocityDecoder(setpoint_t *setpoint, uint8_t type, const void *data
 
   setpoint->mode.yaw = modeVelocity;
 
+  setpoint->resetEmergency = true;
+
+  setpoint->xmode = 0b010;
+  setpoint->ymode = 0b010;
+  setpoint->zmode = 0b010;
+
+  setpoint->x[1] = values->vx;
+  setpoint->y[1] = values->vy;
+  setpoint->z[1] = values->vz;
+
   setpoint->attitudeRate.yaw = values->yawrate;
 }
 
@@ -146,6 +159,8 @@ static void fullControlDecoder(setpoint_t *setpoint, uint8_t type, const void *d
   for (int i = 0; i<3; i++) { setpoint->y[i] = half2single(packet->y[i]); }
   for (int i = 0; i<3; i++) { setpoint->z[i] = half2single(packet->z[i]); }
   for (int i = 0; i<2; i++) { setpoint->yaw[i] = half2single(packet->yaw[i]); }
+
+  debugCount++;
 }
 
  /* ---===== 3 - packetDecoders array =====--- */
@@ -174,3 +189,7 @@ void crtpCommanderGenericDecodeSetpoint(setpoint_t *setpoint, CRTPPacket *pk)
     packetDecoders[type](setpoint, type, ((char*)pk->data)+1, pk->size-1);
   }
 }
+
+LOG_GROUP_START(commander_debug)
+LOG_ADD(LOG_UINT32, packetsReceived, &debugCount)
+LOG_GROUP_STOP(commander_debug)

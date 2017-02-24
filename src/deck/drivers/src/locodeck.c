@@ -89,16 +89,18 @@ static lpsAlgoOptions_t algoOptions = {
 
   // To set a static anchor position from startup, uncomment and modify the
   // following code:
-//   .anchorPosition = {
-//     {timestamp: 1, x: 0.99, y: 1.49, z: 1.80},
-//     {timestamp: 1, x: 0.99, y: 3.29, z: 1.80},
-//     {timestamp: 1, x: 4.67, y: 2.54, z: 1.80},
-//     {timestamp: 1, x: 0.59, y: 2.27, z: 0.20},
-//     {timestamp: 1, x: 4.70, y: 3.38, z: 0.20},
-//     {timestamp: 1, x: 4.70, y: 1.14, z: 0.20},
-//   },
-//
-//   .combinedAnchorPositionOk = true,
+  .anchorPosition = {
+    {timestamp: 1, x: 0.44, y: 0.96, z: 0.20},
+    {timestamp: 1, x: 0.38, y: 3.52, z: 0.20},
+    {timestamp: 1, x: 4.75, y: 3.61, z: 0.20},
+    {timestamp: 1, x: 4.67, y: 1.15, z: 0.20},
+    {timestamp: 1, x: 0.58, y: 0.92, z: 1.80},
+    {timestamp: 1, x: 0.21, y: 3.54, z: 1.80},
+    {timestamp: 1, x: 4.73, y: 3.39, z: 1.80},
+    {timestamp: 1, x: 4.65, y: 0.98, z: 1.80},
+  },
+
+  .combinedAnchorPositionOk = true,
 };
 
 point_t* locodeckGetAnchorPosition(uint8_t anchor)
