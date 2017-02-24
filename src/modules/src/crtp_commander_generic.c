@@ -58,6 +58,9 @@
  */
 
 static uint32_t debugCount;
+static float testValueX;
+static float testValueY;
+static float testValueZ;
 
 typedef void (*packetDecoder_t)(setpoint_t *setpoint, uint8_t type, const void *data, size_t datalen);
 
@@ -157,7 +160,9 @@ static void fullControlDecoder(setpoint_t *setpoint, uint8_t type, const void *d
   for (int i = 0; i<3; i++) { setpoint->y[i] = half2single(packet->y[i]); }
   for (int i = 0; i<3; i++) { setpoint->z[i] = half2single(packet->z[i]); }
   for (int i = 0; i<2; i++) { setpoint->yaw[i] = half2single(packet->yaw[i]); }
-
+  testValueX = setpoint->x[0];
+  testValueY = setpoint->y[0];
+  testValueZ = setpoint->z[0];
   debugCount++;
 }
 
@@ -190,4 +195,7 @@ void crtpCommanderGenericDecodeSetpoint(setpoint_t *setpoint, CRTPPacket *pk)
 
 LOG_GROUP_START(spdebug)
 LOG_ADD(LOG_UINT32, packetsReceived, &debugCount)
+LOG_ADD(LOG_FLOAT, x, &testValueX)
+LOG_ADD(LOG_FLOAT, y, &testValueY)
+LOG_ADD(LOG_FLOAT, z, &testValueZ)
 LOG_GROUP_STOP(spdebug)
