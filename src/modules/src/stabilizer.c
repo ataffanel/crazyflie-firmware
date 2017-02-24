@@ -130,11 +130,11 @@ static void stabilizerTask(void* param)
   }
 }
 
-LOG_GROUP_START(setpoint_debug)
+LOG_GROUP_START(spfull)
 LOG_ADD(LOG_FLOAT, x, &setpoint.x[0])
 LOG_ADD(LOG_FLOAT, y, &setpoint.y[0])
 LOG_ADD(LOG_FLOAT, z, &setpoint.z[0])
-LOG_GROUP_STOP(setpoint_debug)
+LOG_GROUP_STOP(spfull)
 
 LOG_GROUP_START(ctrltarget)
 LOG_ADD(LOG_FLOAT, roll, &setpoint.attitude.roll)

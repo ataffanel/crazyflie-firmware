@@ -107,8 +107,6 @@ static void velocityDecoder(setpoint_t *setpoint, uint8_t type, const void *data
 
   setpoint->mode.yaw = modeVelocity;
 
-  setpoint->resetEmergency = true;
-
   setpoint->xmode = 0b010;
   setpoint->ymode = 0b010;
   setpoint->zmode = 0b010;
@@ -190,6 +188,6 @@ void crtpCommanderGenericDecodeSetpoint(setpoint_t *setpoint, CRTPPacket *pk)
   }
 }
 
-LOG_GROUP_START(commander_debug)
+LOG_GROUP_START(spdebug)
 LOG_ADD(LOG_UINT32, packetsReceived, &debugCount)
-LOG_GROUP_STOP(commander_debug)
+LOG_GROUP_STOP(spdebug)

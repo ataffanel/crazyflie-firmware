@@ -1,6 +1,6 @@
 /**
- *    ||          ____  _ __                           
- * +------+      / __ )(_) /_______________ _____  ___ 
+ *    ||          ____  _ __
+ * +------+      / __ )(_) /_______________ _____  ___
  * | 0xBC |     / __  / / __/ ___/ ___/ __ `/_  / / _ \
  * +------+    / /_/ / / /_/ /__/ /  / /_/ / / /_/  __/
  *  ||  ||    /_____/_/\__/\___/_/   \__,_/ /___/\___/
@@ -47,7 +47,7 @@ static struct crtpLinkOperations nopLink = {
   .setEnable         = (void*) nopFunc,
   .sendPacket        = (void*) nopFunc,
   .receivePacket     = (void*) nopFunc,
-}; 
+};
 
 static struct crtpLinkOperations *link = &nopLink;
 
@@ -90,7 +90,7 @@ bool crtpTest(void)
 void crtpInitTaskQueue(CRTPPort portId)
 {
   ASSERT(queues[portId] == NULL);
-  
+
   queues[portId] = xQueueCreate(1, sizeof(CRTPPacket));
   DEBUG_QUEUE_MONITOR_REGISTER(queues[portId]);
 }
@@ -99,7 +99,7 @@ int crtpReceivePacket(CRTPPort portId, CRTPPacket *p)
 {
   ASSERT(queues[portId]);
   ASSERT(p);
-    
+
   return xQueueReceive(queues[portId], p, 0);
 }
 
@@ -107,7 +107,7 @@ int crtpReceivePacketBlock(CRTPPort portId, CRTPPacket *p)
 {
   ASSERT(queues[portId]);
   ASSERT(p);
-  
+
   return xQueueReceive(queues[portId], p, portMAX_DELAY);
 }
 
@@ -116,7 +116,7 @@ int crtpReceivePacketWait(CRTPPort portId, CRTPPacket *p, int wait)
 {
   ASSERT(queues[portId]);
   ASSERT(p);
-  
+
   return xQueueReceive(queues[portId], p, M2T(wait));
 }
 
@@ -164,7 +164,7 @@ void crtpRxTask(void *param)
         if (queues[p.port])
         {
           // The queue is only 1 long, so if the last packet hasn't been processed, we just replace it
-          xQueueOverwrite(queues[p.port], &p); 
+          xQueueOverwrite(queues[p.port], &p);
         }
         else
         {
@@ -186,13 +186,13 @@ void crtpRegisterPortCB(int port, CrtpCallback cb)
 {
   if (port>CRTP_NBR_OF_PORTS)
     return;
-  
+
   callbacks[port] = cb;
 }
 
 int crtpSendPacket(CRTPPacket *p)
 {
-  ASSERT(p); 
+  ASSERT(p);
   ASSERT(p->size <= CRTP_MAX_DATA_SIZE);
 
   return xQueueSend(txQueue, p, 0);
@@ -200,7 +200,7 @@ int crtpSendPacket(CRTPPacket *p)
 
 int crtpSendPacketBlock(CRTPPacket *p)
 {
-  ASSERT(p); 
+  ASSERT(p);
   ASSERT(p->size <= CRTP_MAX_DATA_SIZE);
 
   return xQueueSend(txQueue, p, portMAX_DELAY);
