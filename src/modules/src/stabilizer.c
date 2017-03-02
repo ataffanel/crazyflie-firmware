@@ -36,6 +36,7 @@
 
 #include "sensors.h"
 #include "commander.h"
+#include "commander_sequence.h"
 #include "crtp_localization_service.h"
 #include "sitaw.h"
 #include "controller.h"
@@ -48,6 +49,7 @@
 #endif
 
 static bool isInit;
+static uint32_t tickCount;
 
 // State variables for the stabilizer
 static setpoint_t setpoint;
@@ -66,6 +68,7 @@ void stabilizerInit(void)
   stateEstimatorInit();
   stateControllerInit();
   powerDistributionInit();
+  newCommanderInit();                            // Added
 #if defined(SITAW_ENABLED)
   sitAwInit();
 #endif
@@ -119,9 +122,9 @@ static void stabilizerTask(void* param)
     stateEstimator(&state, &sensorData, tick);
 #endif
 
-    commanderGetSetpoint(&setpoint, &state);
-
-    sitAwUpdateSetpoint(&setpoint, &sensorData, &state);
+    //commanderGetSetpoint(&setpoint, &state);
+    sequenceCommanderGetSetpoint(&setpoint, &state, tick); 
+    tickCount = tick;
 
     stateController(&control, &setpoint, &sensorData, &state, tick);
     powerDistribution(&control);
@@ -130,11 +133,12 @@ static void stabilizerTask(void* param)
   }
 }
 
-LOG_GROUP_START(spfull)
+LOG_GROUP_START(reference)
 LOG_ADD(LOG_FLOAT, x, &setpoint.x[0])
 LOG_ADD(LOG_FLOAT, y, &setpoint.y[0])
 LOG_ADD(LOG_FLOAT, z, &setpoint.z[0])
-LOG_GROUP_STOP(spfull)
+LOG_ADD(LOG_UINT32, tick, &tickCount)
+LOG_GROUP_STOP(reference)
 
 LOG_GROUP_START(ctrltarget)
 LOG_ADD(LOG_FLOAT, roll, &setpoint.attitude.roll)

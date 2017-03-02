@@ -165,9 +165,9 @@ static void fullControlDecoder(setpoint_t *setpoint, uint8_t type, const void *d
   for (int i = 0; i<3; i++) { setpoint->y[i] = half2single(packet->y[i]); }
   for (int i = 0; i<3; i++) { setpoint->z[i] = half2single(packet->z[i]); }
   for (int i = 0; i<2; i++) { setpoint->yaw[i] = half2single(packet->yaw[i]); }
-  testValueX = setpoint->x[0];
-  testValueY = setpoint->y[0];
-  testValueZ = setpoint->z[0];
+  testValueX = setpoint->x[1];
+  testValueY = setpoint->y[1];
+  testValueZ = setpoint->z[1];
   debugCount++;
 }
 

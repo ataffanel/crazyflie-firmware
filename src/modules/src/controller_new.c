@@ -78,7 +78,7 @@ static float omega_yaw_max = 10;
 static float heuristic_rp = 12;
 static float heuristic_yaw = 5;
 
-static uint32_t lastReferenceTimestamp;
+//static uint32_t lastReferenceTimestamp;
 
 // Struct for logging position information
 static positionMeasurement_t ext_pos;
@@ -96,13 +96,14 @@ void stateControllerInit(void)
 
 void stateController(control_t *control, setpoint_t *setpoint, const sensorData_t *sensors, const state_t *state)
 {
-  uint32_t ticksSinceLastCommand = (xTaskGetTickCount() - lastReferenceTimestamp);
+  //uint32_t ticksSinceLastCommand = (xTaskGetTickCount() - lastReferenceTimestamp);
+  /*
   if (ticksSinceLastCommand > M2T(500)) { // require commands at 2Hz
     control->enable = false;
     control->thrust = 0;
     return;
   }
-
+  */
 
   if (setpoint->setEmergency)
   {
@@ -119,7 +120,9 @@ void stateController(control_t *control, setpoint_t *setpoint, const sensorData_
     control->thrust = 0;
     return;
   }
-
+  
+  consolePrintf("Here");
+  
   // define this here, since we do body-rate control at 1000Hz below the following if statement
   float omega[3] = {0};
   omega[0] = radians(sensors->gyro.x);
