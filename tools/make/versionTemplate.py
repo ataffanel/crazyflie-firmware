@@ -52,7 +52,7 @@ def extract_information_from_git(base):
         ["git", "-C", base, "rev-parse", "--abbrev-ref", "HEAD"]).strip()
     version['branch'] = branch
 
-    subprocess.call(["git", "update-index", "-q", "--refresh"])
+    subprocess.call(["git", "-C", base, "update-index", "-q", "--refresh"])
     changes = subprocess.check_output(
         ["git", "-C", base, "diff-index", "--name-only", "HEAD", "--"]).strip()
     if len(changes):
