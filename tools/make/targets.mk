@@ -13,7 +13,7 @@ endif
 
 target = @$(if $(QUIET), ,echo $($1_COMMAND$(VERBOSE)) ); @$($1_COMMAND)
 
-VTMPL_COMMAND=$(PYTHON2) $(CRAZYFLIE_BASE)/tools/make/versionTemplate.py $< $@
+VTMPL_COMMAND=$(PYTHON2) $(CRAZYFLIE_BASE)tools/make/versionTemplate.py --crazyflie-base $(CRAZYFLIE_BASE) $< $@
 #$(BIN)/$(lastword $(subst /, ,$@))
 VTMPL_COMMAND_SILENT="  VTMPL $@"
 %.c: %.vtpl

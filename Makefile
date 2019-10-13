@@ -353,7 +353,7 @@ endif
 
 print_version:
 	@echo "Build for the $(PLATFORM_NAME_$(PLATFORM))!"
-	@$(PYTHON2) $(CRAZYFLIE_BASE)tools/make/versionTemplate.py --print-version
+	@$(PYTHON2) $(CRAZYFLIE_BASE)tools/make/versionTemplate.py --crazyflie-base $(CRAZYFLIE_BASE) --print-version
 ifeq ($(CLOAD), 1)
 	@echo "Crazyloader build!"
 endif
