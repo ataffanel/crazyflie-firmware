@@ -333,7 +333,7 @@ endif
 #################### Targets ###############################
 
 
-all: check_submodules build
+all: bin/ bin/dep bin/vendor check_submodules build
 build:
 # Each target is in a different line, so they are executed one after the other even when the processor has multiple cores (when the -j option for the make command is > 1). See: https://www.gnu.org/software/make/manual/html_node/Parallel.html
 	@$(MAKE) --no-print-directory clean_version
@@ -341,6 +341,15 @@ build:
 	@$(MAKE) --no-print-directory print_version
 	@$(MAKE) --no-print-directory size
 compile: $(PROG).hex $(PROG).bin $(PROG).dfu
+
+bin/:
+	mkdir -p bin
+
+bin/dep:
+	mkdir -p bin/dep
+
+bin/vendor:
+	mkdir -p bin/vendor
 
 libarm_math.a:
 	+$(MAKE) -C $(CRAZYFLIE_BASE)tools/make/cmsis_dsp/ CRAZYFLIE_BASE=$(abspath $(CRAZYFLIE_BASE)) PROJ_ROOT=$(CURDIR) V=$(V)
