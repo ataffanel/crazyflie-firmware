@@ -7,7 +7,7 @@ CRAZYFLIE_BASE ?= ./
 
 # Put your personal build config in tools/make/config.mk and DO NOT COMMIT IT!
 # Make a copy of tools/make/config.mk.example to get you started
--include $(CRAZYFLIE_BASE)tools/make/config.mk
+-include tools/make/config.mk
 
 CFLAGS += $(EXTRA_CFLAGS)
 
@@ -30,7 +30,7 @@ LPS_TDOA3_ENABLE  ?= 0
 
 
 # Platform configuration handling
--include $(CRAZYFLIE_BASE)current_platform.mk
+-include current_platform.mk
 include $(CRAZYFLIE_BASE)tools/make/platform.mk
 
 CFLAGS += -DCRAZYFLIE_FW
