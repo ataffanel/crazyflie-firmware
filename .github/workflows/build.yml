@@ -18,3 +18,8 @@ jobs:
       submodules: 'recursive'
     - name: Build
       run: tools/build/build PLATFORM=${{ matrix.platform }}
+    - uses: actions/upload-artifact@v2
+      name: firmware-${{ matrix.platform }}
+      path: |
+        *.bin
+        *.dfu
