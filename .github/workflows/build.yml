@@ -1,0 +1,20 @@
+name: build
+
+on:
+  push:
+    branches: [ master, dev-actions ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    container: bitcraze/builder
+    strategy:
+      matrix:
+        platform: ["cf2", "tag"]
+    steps:
+    - uses: actions/checkout@v2
+      submodules: 'recursive'
+    - name: Build
+      run: tools/build/build PLATFORM=${{ matrix.platform }}
